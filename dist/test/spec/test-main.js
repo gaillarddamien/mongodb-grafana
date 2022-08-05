@@ -21,7 +21,7 @@ _prunk2.default.mock('app/plugins/sdk', {
 
 // Setup jsdom
 // Required for loading angularjs
-global.document = (0, _jsdom.jsdom)('<html><head><script></script></head><body></body></html>');
+global.document = new _jsdom.JSDOM('<html><head><script></script></head><body></body></html>');
 global.window = global.document.parentWindow;
 
 // Setup Chai
