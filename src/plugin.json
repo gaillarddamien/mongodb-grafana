@@ -1,6 +1,6 @@
 {
   "name": "MongoDB",
-  "id": "grafana-mongodb-datasource",
+  "id": "grafana-mongodb-opensource-datasource",
   "type": "datasource",
 
   "partials": {

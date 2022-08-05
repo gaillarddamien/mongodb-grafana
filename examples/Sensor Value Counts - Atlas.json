@@ -5,7 +5,7 @@
       "label": "RPI - Atlas",
       "description": "",
       "type": "datasource",
-      "pluginId": "grafana-mongodb-datasource",
+      "pluginId": "grafana-mongodb-opensource-datasource",
       "pluginName": "MongoDB"
     }
   ],
@@ -18,7 +18,7 @@
     },
     {
       "type": "datasource",
-      "id": "grafana-mongodb-datasource",
+      "id": "grafana-mongodb-opensource-datasource",
       "name": "MongoDB",
       "version": "1.3.5"
     },

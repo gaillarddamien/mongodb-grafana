@@ -7,7 +7,8 @@
   "scripts": {
     "build": "npx grunt",
     "test": "npx grunt mochaTest",
-    "server": "cd dist/server && node mongodb-proxy.js"
+    "server": "cd dist/server && node mongodb-proxy.js",
+    "sign": "grafana-toolkit plugin:sign --rootUrls https://grafana.cycling.market"
   },
   "repository": {
     "type": "git",
@@ -36,6 +37,7 @@
     "q": "^1.5.0"
   },
   "dependencies": {
+    "@grafana/toolkit": "^9.0.6",
     "babel-plugin-transform-es2015-for-of": "^6.6.0",
     "babel-plugin-transform-es2015-modules-systemjs": "^6.24.1",
     "babel-preset-es2015": "^6.24.1",
