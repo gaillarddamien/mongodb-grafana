@@ -425,6 +425,7 @@ function getTimeseriesResults(docs)
 
 // Runs a query to support templates. Must returns documents of the form
 // { _id : <id> }
+// { text : __text, value: __value }
 function doTemplateQuery(requestId, queryArgs, db, res, next)
 {
  if ( queryArgs.err == null)
@@ -458,7 +459,14 @@ function doTemplateQuery(requestId, queryArgs, db, res, next)
             for ( var i = 0; i < result.length; i++)
             {
               var doc = result[i]
-              output.push(doc["_id"])
+              if ((doc["__text"] !== undefined) && (doc["__value"] !== undefined))
+              {
+                output.push({ text: doc["__text"], value: doc["__value"]})
+              }
+              else
+              {
+                output.push(doc["_id"])
+              }
             }
             res.json(output);
             client.close()
