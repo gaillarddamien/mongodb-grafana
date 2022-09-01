@@ -80,19 +80,19 @@ function queryError(requestId, err, next)
 }
 
 // Called when query finished
-function queryFinished(requestId, queryId, results, res, next)
+function queryFinished(requestId, refId, results, res, next)
 {
   // We only 1 return error per query so it may have been removed from the list
   if ( requestId in requestsPending )
   {
     var queryStatus = requestsPending[requestId]
     // Mark this as finished
-    queryStatus[queryId].pending = false
-    queryStatus[queryId].results = results
+    queryStatus[refId].pending = false
+    queryStatus[refId].results = results
 
     // See if we're all done
     var done = true
-    for ( var i = 0; i < queryStatus.length; i++)
+    for (const i in queryStatus)
     {
       if (queryStatus[i].pending == true )
       {
@@ -100,13 +100,13 @@ function queryFinished(requestId, queryId, results, res, next)
         break
       }
     }
-  
+
     // If query done, send back results
     if (done)
     {
       // Concatenate results
-      output = []    
-      for ( var i = 0; i < queryStatus.length; i++)
+      output = []
+      for (const i in queryStatus)
       {
         var queryResults = queryStatus[i].results
         var keys = Object.keys(queryResults)
@@ -139,13 +139,14 @@ app.all('/query', function(req, res, next)
     // Generate an id to track requests
     const requestId = ++requestIdCounter                 
     // Add state for the queries in this request
-    var queryStates = []
+    var queryStates = {}
     requestsPending[requestId] = queryStates
     var error = false
 
     for ( var queryId = 0; queryId < req.body.targets.length && !error; queryId++)
     {
       tg = req.body.targets[queryId]
+      refId = tg.refId
       queryArgs = parseQuery(tg.target, substitutions)
       queryArgs.type = tg.type
       if (queryArgs.err != null)
@@ -157,10 +158,10 @@ app.all('/query', function(req, res, next)
       else
       {
         // Add to the state
-        queryStates.push( { pending : true } )
+        queryStates[refId] = { pending : true } 
 
         // Run the query
-        runAggregateQuery( requestId, queryId, req.body, queryArgs, res, next)
+        runAggregateQuery( requestId, refId, req.body, queryArgs, res, next)
       }
     }
   }
@@ -290,7 +291,7 @@ function parseQuery(query, substitutions)
 // Run an aggregate query. Must return documents of the form
 // { value : 0.34334, ts : <epoch time in seconds> }
 
-function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
+function runAggregateQuery( requestId, refId, body, queryArgs, res, next )
 {
   MongoClient.connect(body.db.url, function(err, client) 
   {
@@ -312,7 +313,7 @@ function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
           if ( err != null )
           {
             client.close();
-	    console.log("Error running aggregation query")
+      	    console.log("Error running aggregation query")
             queryError(requestId, err, next)
           }
           else
@@ -322,22 +323,22 @@ function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
               var results = {}
               if ( queryArgs.type == 'timeserie' )
               {
-                results = getTimeseriesResults(docs)
+                results = getTimeseriesResults(docs, refId)
               }
               else
               {
-                results = getTableResults(docs)
+                results = getTableResults(docs, refId)
               }
       
               client.close();
               var elapsedTimeMs = stopwatch.stop()
               logTiming(body, elapsedTimeMs)
               // Mark query as finished - will send back results when all queries finished
-              queryFinished(requestId, queryId, results, res, next)
+              queryFinished(requestId, refId, results, res, next)
             }
             catch(err)
             {
-	      console.log("Error returning results")
+              console.log("Error returning results")
               queryError(requestId, err, next)
             }
           }
@@ -346,7 +347,7 @@ function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
     })
 }
 
-function getTableResults(docs)
+function getTableResults(docs, refId)
 {
   var columns = {}
   
@@ -393,6 +394,7 @@ function getTableResults(docs)
   
   var results = {}
   results["table"] = {
+    refId : refId,
     columns :  Object.values(columns),
     rows : rows,
     type : "table"
@@ -400,25 +402,24 @@ function getTableResults(docs)
   return results
 }
 
-function getTimeseriesResults(docs)
+function getTimeseriesResults(docs, refId)
 {
   var results = {}
   for ( var i = 0; i < docs.length; i++)
   {
     var doc = docs[i]
-    var tg = doc.name
     var dp = null
-    if (tg in results)
+    if (refId in results)
     {
-      dp = results[tg]
+      dp = results[refId]
     }
     else
     {
-      dp = { 'target' : tg, 'datapoints' : [] }
-      results[tg] = dp
+      dp = { 'refId': refId, 'target' : refId, 'datapoints' : [] }
+      results[refId] = dp
     }
     
-    results[tg].datapoints.push([doc['value'], doc['ts'].getTime()])
+    results[refId].datapoints.push([doc['value'], doc['ts'].getTime()])
   }
   return results
 }
