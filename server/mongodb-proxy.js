@@ -9,6 +9,7 @@ var Stopwatch = require("statman-stopwatch");
 var moment = require('moment')
 const { EJSON } = require('bson');
 var mongoParser = require('mongodb-query-parser');
+const { MutableDataFrame, FieldType } = require("@grafana/data")
 
 app.use(bodyParser.json());
 
@@ -407,23 +408,54 @@ function getTimeseriesResults(docs, refId)
   var results = {}
   for ( var i = 0; i < docs.length; i++)
   {
-    var doc = docs[i]
-    var dp = null
-    if (refId in results)
+    var doc = docs[i]    
+    if (results[refId] === undefined)
     {
-      dp = results[refId]
+      const dataframeCreator = { refId: refId, fields: [] }
+     
+      for (const field in doc)
+      {
+        switch(field)
+        {
+          case "time":
+            dataframeCreator.fields.push({ name: 'time', type: FieldType.time })
+            break;
+          case "metric":
+            dataframeCreator.fields.push({ name: 'metric', type: FieldType.string })
+            break;
+          default:
+            dataframeCreator.fields.push({ name: field, type: FieldType.number })
+            break;
+        }
+      }
+      results[refId] = new MutableDataFrame(dataframeCreator)
     }
-    else
+
+    const dataFrameValue = {}
+    for (const field in doc)
     {
-      dp = { 'refId': refId, 'target' : refId, 'datapoints' : [] }
-      results[refId] = dp
+      switch(field)
+      {
+        case "time":
+          if (doc["time"] === null)
+          {
+            dataFrameValue["time"] = 0 // TODO??
+          }
+          else
+          {
+            dataFrameValue["time"] = doc["time"].getTime()
+          }
+          break;
+        default:
+          dataFrameValue[field] = doc[field]
+          break;
+        }
     }
-    
-    results[refId].datapoints.push([doc['value'], doc['ts'].getTime()])
+
+    results[refId].add(dataFrameValue)
   }
   return results
 }
-
 // Runs a query to support templates. Must returns documents of the form
 // { _id : <id> }
 // { text : __text, value: __value }
