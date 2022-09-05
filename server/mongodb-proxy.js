@@ -7,6 +7,9 @@ const assert = require('assert');
 var config = require('config');
 var Stopwatch = require("statman-stopwatch");
 var moment = require('moment')
+const { EJSON } = require('bson');
+var mongoParser = require('mongodb-query-parser');
+const { MutableDataFrame, FieldType } = require("@grafana/data")
 
 app.use(bodyParser.json());
 
@@ -49,6 +52,7 @@ app.all('/search', function(req, res, next)
   queryArgs = parseQuery(req.body.target, {})
   if (queryArgs.err != null)
   {
+    console.log("Error in query parsing")
     queryError(requestId, queryArgs.err, next)
   }
   else
@@ -77,19 +81,19 @@ function queryError(requestId, err, next)
 }
 
 // Called when query finished
-function queryFinished(requestId, queryId, results, res, next)
+function queryFinished(requestId, refId, results, res, next)
 {
   // We only 1 return error per query so it may have been removed from the list
   if ( requestId in requestsPending )
   {
     var queryStatus = requestsPending[requestId]
     // Mark this as finished
-    queryStatus[queryId].pending = false
-    queryStatus[queryId].results = results
+    queryStatus[refId].pending = false
+    queryStatus[refId].results = results
 
     // See if we're all done
     var done = true
-    for ( var i = 0; i < queryStatus.length; i++)
+    for (const i in queryStatus)
     {
       if (queryStatus[i].pending == true )
       {
@@ -97,13 +101,13 @@ function queryFinished(requestId, queryId, results, res, next)
         break
       }
     }
-  
+
     // If query done, send back results
     if (done)
     {
       // Concatenate results
-      output = []    
-      for ( var i = 0; i < queryStatus.length; i++)
+      output = []
+      for (const i in queryStatus)
       {
         var queryResults = queryStatus[i].results
         var keys = Object.keys(queryResults)
@@ -136,27 +140,29 @@ app.all('/query', function(req, res, next)
     // Generate an id to track requests
     const requestId = ++requestIdCounter                 
     // Add state for the queries in this request
-    var queryStates = []
+    var queryStates = {}
     requestsPending[requestId] = queryStates
     var error = false
 
     for ( var queryId = 0; queryId < req.body.targets.length && !error; queryId++)
     {
       tg = req.body.targets[queryId]
+      refId = tg.refId
       queryArgs = parseQuery(tg.target, substitutions)
       queryArgs.type = tg.type
       if (queryArgs.err != null)
       {
+        console.log("Error in query parsing")
         queryError(requestId, queryArgs.err, next)
         error = true
       }
       else
       {
         // Add to the state
-        queryStates.push( { pending : true } )
+        queryStates[refId] = { pending : true } 
 
         // Run the query
-        runAggregateQuery( requestId, queryId, req.body, queryArgs, res, next)
+        runAggregateQuery( requestId, refId, req.body, queryArgs, res, next)
       }
     }
   }
@@ -232,7 +238,7 @@ function parseQuery(query, substitutions)
     }
   
     // Args is the rest up to the last bracket
-    var closeBracketIndex = query.indexOf(')', openBracketIndex)
+    var closeBracketIndex = query.lastIndexOf(')')
     if (closeBracketIndex == -1)
     {
       queryErrors.push("Can't find last bracket")
@@ -244,7 +250,7 @@ function parseQuery(query, substitutions)
       {
         // Wrap args in array syntax so we can check for optional options arg
         args = '[' + args + ']'
-        docs = JSON.parse(args)
+        docs = mongoParser(args)
         // First Arg is pipeline
         doc.pipeline = docs[0]
         // If we have 2 top level args, second is agg options
@@ -286,7 +292,7 @@ function parseQuery(query, substitutions)
 // Run an aggregate query. Must return documents of the form
 // { value : 0.34334, ts : <epoch time in seconds> }
 
-function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
+function runAggregateQuery( requestId, refId, body, queryArgs, res, next )
 {
   MongoClient.connect(body.db.url, function(err, client) 
   {
@@ -308,6 +314,7 @@ function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
           if ( err != null )
           {
             client.close();
+      	    console.log("Error running aggregation query")
             queryError(requestId, err, next)
           }
           else
@@ -317,21 +324,22 @@ function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
               var results = {}
               if ( queryArgs.type == 'timeserie' )
               {
-                results = getTimeseriesResults(docs)
+                results = getTimeseriesResults(docs, refId)
               }
               else
               {
-                results = getTableResults(docs)
+                results = getTableResults(docs, refId)
               }
       
               client.close();
               var elapsedTimeMs = stopwatch.stop()
               logTiming(body, elapsedTimeMs)
               // Mark query as finished - will send back results when all queries finished
-              queryFinished(requestId, queryId, results, res, next)
+              queryFinished(requestId, refId, results, res, next)
             }
             catch(err)
             {
+              console.log("Error returning results")
               queryError(requestId, err, next)
             }
           }
@@ -340,7 +348,7 @@ function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
     })
 }
 
-function getTableResults(docs)
+function getTableResults(docs, refId)
 {
   var columns = {}
   
@@ -387,6 +395,7 @@ function getTableResults(docs)
   
   var results = {}
   results["table"] = {
+    refId : refId,
     columns :  Object.values(columns),
     rows : rows,
     type : "table"
@@ -394,31 +403,62 @@ function getTableResults(docs)
   return results
 }
 
-function getTimeseriesResults(docs)
+function getTimeseriesResults(docs, refId)
 {
   var results = {}
   for ( var i = 0; i < docs.length; i++)
   {
-    var doc = docs[i]
-    var tg = doc.name
-    var dp = null
-    if (tg in results)
+    var doc = docs[i]    
+    if (results[refId] === undefined)
     {
-      dp = results[tg]
+      const dataframeCreator = { refId: refId, fields: [] }
+     
+      for (const field in doc)
+      {
+        switch(field)
+        {
+          case "time":
+            dataframeCreator.fields.push({ name: 'time', type: FieldType.time })
+            break;
+          case "metric":
+            dataframeCreator.fields.push({ name: 'metric', type: FieldType.string })
+            break;
+          default:
+            dataframeCreator.fields.push({ name: field, type: FieldType.number })
+            break;
+        }
+      }
+      results[refId] = new MutableDataFrame(dataframeCreator)
     }
-    else
+
+    const dataFrameValue = {}
+    for (const field in doc)
     {
-      dp = { 'target' : tg, 'datapoints' : [] }
-      results[tg] = dp
+      switch(field)
+      {
+        case "time":
+          if (doc["time"] === null)
+          {
+            dataFrameValue["time"] = 0 // TODO??
+          }
+          else
+          {
+            dataFrameValue["time"] = doc["time"].getTime()
+          }
+          break;
+        default:
+          dataFrameValue[field] = doc[field]
+          break;
+        }
     }
-    
-    results[tg].datapoints.push([doc['value'], doc['ts'].getTime()])
+
+    results[refId].add(dataFrameValue)
   }
   return results
 }
-
 // Runs a query to support templates. Must returns documents of the form
 // { _id : <id> }
+// { text : __text, value: __value }
 function doTemplateQuery(requestId, queryArgs, db, res, next)
 {
  if ( queryArgs.err == null)
@@ -452,7 +492,14 @@ function doTemplateQuery(requestId, queryArgs, db, res, next)
             for ( var i = 0; i < result.length; i++)
             {
               var doc = result[i]
-              output.push(doc["_id"])
+              if ((doc["__text"] !== undefined) && (doc["__value"] !== undefined))
+              {
+                output.push({ text: doc["__text"], value: doc["__value"]})
+              }
+              else
+              {
+                output.push(doc["_id"])
+              }
             }
             res.json(output);
             client.close()
@@ -471,7 +518,7 @@ function logRequest(body, type)
 {
   if (serverConfig.logRequests)
   {
-    console.log("REQUEST: " + type + ":\n" + JSON.stringify(body,null,2))
+    console.log("REQUEST: " + type + ":\n" + EJSON.stringify(body, null, 2))
   }
 }
 
@@ -480,17 +527,18 @@ function logQuery(query, options)
   if (serverConfig.logQueries)
   {
     console.log("Query:")
-    console.log(JSON.stringify(query,null,2))
+    console.log(EJSON.stringify(query,null,2))
     if ( options != null )
     {
       console.log("Query Options:")
-      console.log(JSON.stringify(options,null,2))
+      console.log(EJSON.stringify(options,null,2))
     }
   }
 }
 
 function logTiming(body, elapsedTimeMs)
 {
+
   if (serverConfig.logTimings)
   {
     var range = new Date(body.range.to) - new Date(body.range.from)
