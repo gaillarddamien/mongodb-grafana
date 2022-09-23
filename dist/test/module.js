@@ -34,4 +34,3 @@ exports.QueryCtrl = _query_ctrl.GenericDatasourceQueryCtrl;
 exports.ConfigCtrl = GenericConfigCtrl;
 exports.QueryOptionsCtrl = GenericQueryOptionsCtrl;
 exports.AnnotationsQueryCtrl = GenericAnnotationsQueryCtrl;
-//# sourceMappingURL=module.js.map

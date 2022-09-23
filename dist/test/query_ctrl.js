@@ -53,4 +53,3 @@ var GenericDatasourceQueryCtrl = exports.GenericDatasourceQueryCtrl = function (
 }(_sdk.QueryCtrl);
 
 GenericDatasourceQueryCtrl.templateUrl = 'partials/query.editor.html';
-//# sourceMappingURL=query_ctrl.js.map

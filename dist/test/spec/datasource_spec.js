@@ -222,4 +222,3 @@ describe('GenericDatasource', function () {
         done();
     });
 });
-//# sourceMappingURL=datasource_spec.js.map

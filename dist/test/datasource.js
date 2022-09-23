@@ -152,4 +152,3 @@ var GenericDatasource = exports.GenericDatasource = function () {
 
   return GenericDatasource;
 }();
-//# sourceMappingURL=datasource.js.map

@@ -28,4 +28,3 @@ global.window = global.document.parentWindow;
 _chai2.default.should();
 global.assert = _chai2.default.assert;
 global.expect = _chai2.default.expect;
-//# sourceMappingURL=test-main.js.map
